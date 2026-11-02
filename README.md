@@ -26,12 +26,12 @@
 
 Create an app at [trakt.tv/oauth/applications/new](https://trakt.tv/oauth/applications/new) — or manage existing ones at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications):
 
-- **Redirect URI** — set it to `urn:ietf:wg:oauth:2.0:oob`. This server authenticates with Trakt's device flow, which never redirects, but Trakt requires the field; `oob` is the standard out-of-band placeholder.
-- Copy the **Client ID** and **Client Secret** — you'll paste them in the next step.
+- **Redirect URI** — set it to exactly `http://localhost:8080/callback`. Setup signs in with OAuth PKCE and listens there for Trakt's redirect.
+- Copy the **Client ID** — you'll paste it in the next step. No Client Secret is needed.
 
 ### 2. Authenticate
 
-Run the one-time OAuth setup. It exchanges your credentials for an access token and stores everything in the macOS Keychain (service `mcp-trakt`):
+Run the one-time OAuth setup. It opens Trakt in your browser, and once you approve, stores your client ID and tokens in the macOS Keychain (service `mcp-trakt`). Tokens are never printed:
 
 ```sh
 npx @kud/mcp-trakt@latest setup

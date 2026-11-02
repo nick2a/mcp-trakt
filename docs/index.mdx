@@ -30,8 +30,8 @@ checkin, scrobble, recommendations, and user stats.
 ### 1. Create a Trakt API app
 
 Go to [trakt.tv/oauth/applications/new](https://trakt.tv/oauth/applications/new)
-and create a new app. You only need to fill in the name — leave the redirect URI
-as `urn:ietf:wg:oauth:2.0:oob`. Copy your **Client ID** and **Client Secret**.
+and create a new app. Set the redirect URI to exactly
+`http://localhost:8080/callback`. Copy your **Client ID** (no secret is needed).
 
 ### 2. Run setup
 
@@ -39,8 +39,8 @@ as `urn:ietf:wg:oauth:2.0:oob`. Copy your **Client ID** and **Client Secret**.
 npx @kud/mcp-trakt@latest setup
 ```
 
-This launches the device OAuth flow: paste your Client ID and Secret when
-prompted, visit the URL shown, enter the code, and your credentials are saved
+This signs you in with OAuth PKCE: paste your Client ID when prompted, approve
+access in the browser window that opens, and your credentials are saved
 securely to the macOS Keychain. You never touch them again.
 
 ### 3. Add to your MCP client
