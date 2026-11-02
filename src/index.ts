@@ -240,6 +240,76 @@ const pageInput = (defaultLimit: number) => ({
     .describe("Items per page"),
 })
 
+const compactInput = {
+  compact: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Fetch every page and return only type, title, year, imdb/trakt ids and dates, minified. Use to scan or count the whole list; ignores page, limit and extended",
+    ),
+}
+
+// Compact mode stops after this many pages (100 items each) and reports
+// truncated: true, so one call can't grow without bound.
+const COMPACT_MAX_PAGES = 20
+
+type MediaItem = {
+  type?: string
+  show?: { title: string }
+  [key: string]: unknown
+}
+
+// One slim row per item: enough to find or count titles and to act on them by
+// trakt id, plus the tool's own date/count fields (e.g. listed_at, plays).
+const compactItem = (item: MediaItem, keep: string[]) => {
+  // Watched and collection items have no `type`; infer it from the media key.
+  const type = item.type ?? (item.movie ? "movie" : "show")
+  const media = item[type] as {
+    title: string
+    year?: number
+    ids?: { imdb?: string; trakt?: number }
+  }
+  return {
+    type,
+    title: media.title,
+    year: media.year ?? null,
+    imdb: media.ids?.imdb ?? null,
+    trakt: media.ids?.trakt ?? null,
+    ...(item.show && type !== "show" ? { show: item.show.title } : {}),
+    ...Object.fromEntries(keep.map((k) => [k, item[k] ?? null])),
+  }
+}
+
+// Fetches every page of `path` (up to COMPACT_MAX_PAGES) and returns compact
+// rows as minified JSON.
+const compactList = async (path: string, keep: string[], failure: string) => {
+  const items: ReturnType<typeof compactItem>[] = []
+  let itemCount = 0
+  let pageCount = 1
+  for (let page = 1; page <= Math.min(pageCount, COMPACT_MAX_PAGES); page++) {
+    const data = await apiFetchPage<MediaItem>(
+      `${path}?${pageQuery(page, 100)}`,
+    )
+    if (!data) return err(failure)
+    items.push(...data.items.map((i) => compactItem(i, keep)))
+    pageCount = data.pagination?.pageCount ?? 1
+    itemCount = data.pagination?.itemCount ?? items.length
+  }
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          items,
+          itemCount,
+          truncated: pageCount > COMPACT_MAX_PAGES,
+        }),
+      },
+    ],
+  }
+}
+
 const apiDelete = async (path: string): Promise<boolean> => {
   try {
     const response = await authedFetch(path, { method: "DELETE" })
@@ -564,11 +634,19 @@ export const getCollectionMovies = async ({
   extended,
   page,
   limit,
+  compact,
 }: {
   extended: boolean
   page: number
   limit: number
+  compact?: boolean
 }) => {
+  if (compact)
+    return compactList(
+      "/sync/collection/movies",
+      ["collected_at"],
+      "failed to fetch movie collection",
+    )
   const params = extended ? "&extended=full" : ""
   const data = await apiFetchPage<unknown>(
     `/sync/collection/movies?${pageQuery(page, limit)}${params}`,
@@ -580,11 +658,19 @@ export const getCollectionShows = async ({
   extended,
   page,
   limit,
+  compact,
 }: {
   extended: boolean
   page: number
   limit: number
+  compact?: boolean
 }) => {
+  if (compact)
+    return compactList(
+      "/sync/collection/shows",
+      ["last_collected_at"],
+      "failed to fetch show collection",
+    )
   const params = extended ? "&extended=full" : ""
   const data = await apiFetchPage<unknown>(
     `/sync/collection/shows?${pageQuery(page, limit)}${params}`,
@@ -638,11 +724,19 @@ export const getWatchedMovies = async ({
   extended,
   page,
   limit,
+  compact,
 }: {
   extended: boolean
   page: number
   limit: number
+  compact?: boolean
 }) => {
+  if (compact)
+    return compactList(
+      "/sync/watched/movies",
+      ["plays", "last_watched_at"],
+      "failed to fetch watched movies",
+    )
   const params = extended ? "&extended=full" : ""
   const data = await apiFetchPage<unknown>(
     `/sync/watched/movies?${pageQuery(page, limit)}${params}`,
@@ -654,11 +748,19 @@ export const getWatchedShows = async ({
   extended,
   page,
   limit,
+  compact,
 }: {
   extended: boolean
   page: number
   limit: number
+  compact?: boolean
 }) => {
+  if (compact)
+    return compactList(
+      "/sync/watched/shows",
+      ["plays", "last_watched_at"],
+      "failed to fetch watched shows",
+    )
   const params = extended ? "&extended=full" : ""
   const data = await apiFetchPage<unknown>(
     `/sync/watched/shows?${pageQuery(page, limit)}${params}`,
@@ -759,13 +861,17 @@ export const getWatchlist = async ({
   sort,
   page,
   limit,
+  compact,
 }: {
   type?: "movies" | "shows" | "episodes" | "seasons"
   sort: string
   page: number
   limit: number
+  compact?: boolean
 }) => {
   const path = type ? `/sync/watchlist/${type}/${sort}` : "/sync/watchlist"
+  if (compact)
+    return compactList(path, ["listed_at"], "failed to fetch watchlist")
   const data = await apiFetchPage<unknown>(
     `${path}?${pageQuery(page, limit)}&extended=full`,
   )
@@ -1370,6 +1476,7 @@ server.registerTool(
         .default(true)
         .describe("Include full movie info"),
       ...pageInput(100),
+      ...compactInput,
     },
   },
   getCollectionMovies,
@@ -1387,6 +1494,7 @@ server.registerTool(
         .default(true)
         .describe("Include full show info"),
       ...pageInput(100),
+      ...compactInput,
     },
   },
   getCollectionShows,
@@ -1472,6 +1580,7 @@ server.registerTool(
     inputSchema: {
       extended: z.boolean().optional().default(true),
       ...pageInput(100),
+      ...compactInput,
     },
   },
   getWatchedMovies,
@@ -1485,6 +1594,7 @@ server.registerTool(
     inputSchema: {
       extended: z.boolean().optional().default(true),
       ...pageInput(100),
+      ...compactInput,
     },
   },
   getWatchedShows,
@@ -1652,6 +1762,7 @@ server.registerTool(
         .optional()
         .default("rank"),
       ...pageInput(100),
+      ...compactInput,
     },
   },
   getWatchlist,

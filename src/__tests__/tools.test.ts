@@ -753,6 +753,236 @@ describe("paginated list tools", () => {
   })
 })
 
+// ─── Compact mode ───
+
+describe("compact mode", () => {
+  const pages = (pageCount: number, itemCount: number) => ({
+    "X-Pagination-Page-Count": String(pageCount),
+    "X-Pagination-Item-Count": String(itemCount),
+  })
+  const movie = (title: string, trakt: number) => ({
+    title,
+    year: 2020,
+    ids: { trakt, imdb: `tt${trakt}`, slug: "x", tmdb: 1 },
+    overview: "dropped in compact mode",
+  })
+  // Serves `perPage` items for each page of a list with `itemCount` items.
+  const servePages = (
+    itemCount: number,
+    perPage: (page: number) => unknown[],
+  ) =>
+    mockFetch.mockImplementation((url: string) => {
+      const page = Number(new URL(url).searchParams.get("page"))
+      return jsonResponse(
+        perPage(page),
+        200,
+        pages(Math.ceil(itemCount / 100), itemCount),
+      )
+    })
+
+  it("fetches every page without extended and returns slim, minified rows", async () => {
+    servePages(101, (page) =>
+      page === 1
+        ? [
+            {
+              type: "movie",
+              rank: 1,
+              listed_at: "2026-01-01",
+              movie: movie("Ran", 1),
+            },
+          ]
+        : [
+            {
+              type: "movie",
+              rank: 2,
+              listed_at: "2026-01-02",
+              movie: movie("Kill", 2),
+            },
+          ],
+    )
+
+    const result = await api.getWatchlist({
+      sort: "rank",
+      page: 5,
+      limit: 7,
+      compact: true,
+    })
+    const text = result.content[0].text
+
+    expect(text).not.toContain("\n")
+    expect(JSON.parse(text)).toEqual({
+      items: [
+        {
+          type: "movie",
+          title: "Ran",
+          year: 2020,
+          imdb: "tt1",
+          trakt: 1,
+          listed_at: "2026-01-01",
+        },
+        {
+          type: "movie",
+          title: "Kill",
+          year: 2020,
+          imdb: "tt2",
+          trakt: 2,
+          listed_at: "2026-01-02",
+        },
+      ],
+      itemCount: 101,
+      truncated: false,
+    })
+    expect(mockFetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.trakt.tv/sync/watchlist?page=1&limit=100",
+      "https://api.trakt.tv/sync/watchlist?page=2&limit=100",
+    ])
+  })
+
+  it("infers the type of watched items and keeps plays and last_watched_at", async () => {
+    servePages(1, () => [
+      {
+        plays: 3,
+        last_watched_at: "2026-02-01",
+        last_updated_at: "x",
+        movie: movie("Ran", 1),
+      },
+    ])
+    const movies = await api.getWatchedMovies({
+      extended: true,
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    expect(JSON.parse(movies.content[0].text).items).toEqual([
+      {
+        type: "movie",
+        title: "Ran",
+        year: 2020,
+        imdb: "tt1",
+        trakt: 1,
+        plays: 3,
+        last_watched_at: "2026-02-01",
+      },
+    ])
+
+    servePages(1, () => [
+      {
+        plays: 9,
+        last_watched_at: "2026-03-01",
+        seasons: [],
+        show: movie("Gokusen", 5),
+      },
+    ])
+    const shows = await api.getWatchedShows({
+      extended: true,
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    expect(JSON.parse(shows.content[0].text).items).toEqual([
+      {
+        type: "show",
+        title: "Gokusen",
+        year: 2020,
+        imdb: "tt5",
+        trakt: 5,
+        plays: 9,
+        last_watched_at: "2026-03-01",
+      },
+    ])
+  })
+
+  it("keeps each collection tool's own date field", async () => {
+    servePages(1, () => [
+      { collected_at: "2026-04-01", movie: movie("Ran", 1) },
+    ])
+    const movies = await api.getCollectionMovies({
+      extended: true,
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    expect(JSON.parse(movies.content[0].text).items[0].collected_at).toBe(
+      "2026-04-01",
+    )
+
+    servePages(1, () => [
+      { last_collected_at: "2026-05-01", show: movie("Gokusen", 5) },
+    ])
+    const shows = await api.getCollectionShows({
+      extended: true,
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    expect(JSON.parse(shows.content[0].text).items[0]).toMatchObject({
+      type: "show",
+      last_collected_at: "2026-05-01",
+    })
+  })
+
+  it("names the show for episode watchlist items", async () => {
+    servePages(1, () => [
+      {
+        type: "episode",
+        listed_at: "2026-06-01",
+        episode: { title: "Pilot", season: 1, number: 1, ids: { trakt: 7 } },
+        show: { title: "Gokusen" },
+      },
+    ])
+    const result = await api.getWatchlist({
+      sort: "rank",
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    expect(JSON.parse(result.content[0].text).items[0]).toEqual({
+      type: "episode",
+      title: "Pilot",
+      year: null,
+      imdb: null,
+      trakt: 7,
+      show: "Gokusen",
+      listed_at: "2026-06-01",
+    })
+  })
+
+  it("stops after 20 pages and reports truncated", async () => {
+    servePages(2500, (page) => [
+      { type: "movie", listed_at: "x", movie: movie(`M${page}`, page) },
+    ])
+    const result = await api.getWatchlist({
+      sort: "rank",
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    const body = JSON.parse(result.content[0].text)
+    expect(mockFetch).toHaveBeenCalledTimes(20)
+    expect(body.items).toHaveLength(20)
+    expect(body).toMatchObject({ itemCount: 2500, truncated: true })
+  })
+
+  it("returns an error if any page fails", async () => {
+    mockFetch.mockImplementation((url: string) =>
+      new URL(url).searchParams.get("page") === "2"
+        ? errorResponse(500)
+        : jsonResponse(
+            [{ type: "movie", movie: movie("Ran", 1) }],
+            200,
+            pages(2, 101),
+          ),
+    )
+    const result = await api.getWatchlist({
+      sort: "rank",
+      page: 1,
+      limit: 100,
+      compact: true,
+    })
+    expect(result.content[0].text).toBe("Error: failed to fetch watchlist")
+  })
+})
+
 describe("addToWatchlist", () => {
   it("returns result on success", async () => {
     mockFetch.mockReturnValue(jsonResponse({ added: { movies: 1 } }))

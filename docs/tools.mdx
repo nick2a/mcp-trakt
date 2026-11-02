@@ -72,8 +72,8 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                     | Description                         |
 | ------------------------ | ----------------------------------- |
-| `get_collection_movies`  | Movies in the user's collection (paginated) |
-| `get_collection_shows`   | Shows in the user's collection (paginated)  |
+| `get_collection_movies`  | Movies in the user's collection (paginated; `compact` returns every page, slim) |
+| `get_collection_shows`   | Shows in the user's collection (paginated; `compact` returns every page, slim)  |
 | `add_to_collection`      | Add movies, shows, or episodes      |
 | `remove_from_collection` | Remove items from the collection    |
 
@@ -81,8 +81,8 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                 | Description                                    |
 | -------------------- | ---------------------------------------------- |
-| `get_watched_movies` | Watched movies with play counts (paginated)            |
-| `get_watched_shows`  | Watched shows with play counts per episode (paginated) |
+| `get_watched_movies` | Watched movies with play counts (paginated; `compact` returns every page, slim)            |
+| `get_watched_shows`  | Watched shows with play counts per episode (paginated; `compact` returns every page, slim) |
 
 ## ⏯️ Playback
 
@@ -109,7 +109,7 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                    | Description                             |
 | ----------------------- | --------------------------------------- |
-| `get_watchlist`         | View the authenticated user's watchlist (paginated) |
+| `get_watchlist`         | View the authenticated user's watchlist (paginated; `compact` returns every page, slim) |
 | `add_to_watchlist`      | Add movies, shows, or episodes          |
 | `remove_from_watchlist` | Remove items from the watchlist         |
 

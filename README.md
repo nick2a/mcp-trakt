@@ -131,8 +131,8 @@ Once connected, the following tools are available grouped by category.
 
 | Tool                     | Description                                       |
 | ------------------------ | ------------------------------------------------- |
-| `get_collection_movies`  | Movies in your collection (paginated)                     |
-| `get_collection_shows`   | Shows in your collection (paginated)                      |
+| `get_collection_movies`  | Movies in your collection (paginated; `compact` returns every page, slim)                     |
+| `get_collection_shows`   | Shows in your collection (paginated; `compact` returns every page, slim)                      |
 | `add_to_collection`      | Add movies, shows, or episodes to your collection |
 | `remove_from_collection` | Remove items from your collection                 |
 
@@ -140,8 +140,8 @@ Once connected, the following tools are available grouped by category.
 
 | Tool                 | Description                                             |
 | -------------------- | ------------------------------------------------------- |
-| `get_watched_movies` | Movies you have watched with play counts (paginated)            |
-| `get_watched_shows`  | Shows you have watched with play counts per episode (paginated) |
+| `get_watched_movies` | Movies you have watched with play counts (paginated; `compact` returns every page, slim)            |
+| `get_watched_shows`  | Shows you have watched with play counts per episode (paginated; `compact` returns every page, slim) |
 
 ### Playback
 
@@ -168,7 +168,7 @@ Once connected, the following tools are available grouped by category.
 
 | Tool                    | Description                                       |
 | ----------------------- | ------------------------------------------------- |
-| `get_watchlist`         | Your watchlist, filterable by type and sort order (paginated) |
+| `get_watchlist`         | Your watchlist, filterable by type and sort order (paginated; `compact` returns every page, slim) |
 | `add_to_watchlist`      | Add movies, shows, or episodes to your watchlist  |
 | `remove_from_watchlist` | Remove items from your watchlist                  |
 
