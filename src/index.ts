@@ -180,6 +180,66 @@ export const apiFetch = async <T>(
   }
 }
 
+type Pagination = {
+  page: number
+  limit: number
+  pageCount: number
+  itemCount: number
+}
+
+// For list endpoints Trakt paginates (default 100 per page). Returns the page's
+// items plus the X-Pagination-* headers, so the caller can see there is more
+// instead of silently getting only page 1. pagination is null if Trakt sent none.
+export const apiFetchPage = async <T>(
+  path: string,
+): Promise<{ items: T[]; pagination: Pagination | null } | null> => {
+  try {
+    const response = await authedFetch(path)
+    if (!response.ok) {
+      console.error(
+        `API error: ${response.status} ${response.statusText} — ${path}`,
+      )
+      return null
+    }
+    const header = (name: string) =>
+      response.headers.get(`x-pagination-${name}`)
+    const pagination = header("page-count")
+      ? {
+          page: Number(header("page")),
+          limit: Number(header("limit")),
+          pageCount: Number(header("page-count")),
+          itemCount: Number(header("item-count")),
+        }
+      : null
+    return { items: (await response.json()) as T[], pagination }
+  } catch (error) {
+    console.error(`Fetch failed: ${path}`, error)
+    return null
+  }
+}
+
+const pageQuery = (page: number, limit: number) => `page=${page}&limit=${limit}`
+
+// Input schema shared by the paginated list tools.
+const pageInput = (defaultLimit: number) => ({
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .default(1)
+    .describe(
+      "Page to fetch, starting at 1; the result's pagination.pageCount says how many pages exist",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .default(defaultLimit)
+    .describe("Items per page"),
+})
+
 const apiDelete = async (path: string): Promise<boolean> => {
   try {
     const response = await authedFetch(path, { method: "DELETE" })
@@ -464,8 +524,8 @@ export const getHistory = async ({
   page: number
 }) => {
   const path = type ? `/sync/history/${type}` : "/sync/history"
-  const data = await apiFetch<unknown[]>(
-    `${path}?limit=${limit}&page=${page}&extended=full`,
+  const data = await apiFetchPage<unknown>(
+    `${path}?${pageQuery(page, limit)}&extended=full`,
   )
   return data ? ok(data) : err("failed to fetch history")
 }
@@ -502,21 +562,33 @@ export const removeFromHistory = async ({
 
 export const getCollectionMovies = async ({
   extended,
+  page,
+  limit,
 }: {
   extended: boolean
+  page: number
+  limit: number
 }) => {
-  const params = extended ? "?extended=full" : ""
-  const data = await apiFetch<unknown[]>(`/sync/collection/movies${params}`)
+  const params = extended ? "&extended=full" : ""
+  const data = await apiFetchPage<unknown>(
+    `/sync/collection/movies?${pageQuery(page, limit)}${params}`,
+  )
   return data ? ok(data) : err("failed to fetch movie collection")
 }
 
 export const getCollectionShows = async ({
   extended,
+  page,
+  limit,
 }: {
   extended: boolean
+  page: number
+  limit: number
 }) => {
-  const params = extended ? "?extended=full" : ""
-  const data = await apiFetch<unknown[]>(`/sync/collection/shows${params}`)
+  const params = extended ? "&extended=full" : ""
+  const data = await apiFetchPage<unknown>(
+    `/sync/collection/shows?${pageQuery(page, limit)}${params}`,
+  )
   return data ? ok(data) : err("failed to fetch show collection")
 }
 
@@ -562,15 +634,35 @@ export const removeFromCollection = async ({
 
 // ─── Watched ───
 
-export const getWatchedMovies = async ({ extended }: { extended: boolean }) => {
-  const params = extended ? "?extended=full" : ""
-  const data = await apiFetch<unknown[]>(`/sync/watched/movies${params}`)
+export const getWatchedMovies = async ({
+  extended,
+  page,
+  limit,
+}: {
+  extended: boolean
+  page: number
+  limit: number
+}) => {
+  const params = extended ? "&extended=full" : ""
+  const data = await apiFetchPage<unknown>(
+    `/sync/watched/movies?${pageQuery(page, limit)}${params}`,
+  )
   return data ? ok(data) : err("failed to fetch watched movies")
 }
 
-export const getWatchedShows = async ({ extended }: { extended: boolean }) => {
-  const params = extended ? "?extended=full" : ""
-  const data = await apiFetch<unknown[]>(`/sync/watched/shows${params}`)
+export const getWatchedShows = async ({
+  extended,
+  page,
+  limit,
+}: {
+  extended: boolean
+  page: number
+  limit: number
+}) => {
+  const params = extended ? "&extended=full" : ""
+  const data = await apiFetchPage<unknown>(
+    `/sync/watched/shows?${pageQuery(page, limit)}${params}`,
+  )
   return data ? ok(data) : err("failed to fetch watched shows")
 }
 
@@ -665,12 +757,18 @@ export const removeRating = async ({
 export const getWatchlist = async ({
   type,
   sort,
+  page,
+  limit,
 }: {
   type?: "movies" | "shows" | "episodes" | "seasons"
   sort: string
+  page: number
+  limit: number
 }) => {
   const path = type ? `/sync/watchlist/${type}/${sort}` : "/sync/watchlist"
-  const data = await apiFetch<unknown[]>(`${path}?extended=full`)
+  const data = await apiFetchPage<unknown>(
+    `${path}?${pageQuery(page, limit)}&extended=full`,
+  )
   return data ? ok(data) : err("failed to fetch watchlist")
 }
 
@@ -1186,14 +1284,14 @@ server.registerTool(
 server.registerTool(
   "get_history",
   {
-    description: "Get watch history for the authenticated user",
+    description:
+      "Get watch history for the authenticated user, one page at a time",
     inputSchema: {
       type: z
         .enum(["movies", "shows", "episodes"])
         .optional()
         .describe("Filter by content type"),
-      limit: z.number().optional().default(20),
-      page: z.number().optional().default(1),
+      ...pageInput(20),
     },
   },
   getHistory,
@@ -1263,13 +1361,15 @@ server.registerTool(
 server.registerTool(
   "get_collection_movies",
   {
-    description: "Get all movies in the authenticated user's collection",
+    description:
+      "Get movies in the authenticated user's collection, one page at a time",
     inputSchema: {
       extended: z
         .boolean()
         .optional()
         .default(true)
         .describe("Include full movie info"),
+      ...pageInput(100),
     },
   },
   getCollectionMovies,
@@ -1278,13 +1378,15 @@ server.registerTool(
 server.registerTool(
   "get_collection_shows",
   {
-    description: "Get all shows in the authenticated user's collection",
+    description:
+      "Get shows in the authenticated user's collection, one page at a time",
     inputSchema: {
       extended: z
         .boolean()
         .optional()
         .default(true)
         .describe("Include full show info"),
+      ...pageInput(100),
     },
   },
   getCollectionShows,
@@ -1366,9 +1468,10 @@ server.registerTool(
   "get_watched_movies",
   {
     description:
-      "Get all movies the authenticated user has watched with play counts",
+      "Get movies the authenticated user has watched with play counts, one page at a time",
     inputSchema: {
       extended: z.boolean().optional().default(true),
+      ...pageInput(100),
     },
   },
   getWatchedMovies,
@@ -1378,9 +1481,10 @@ server.registerTool(
   "get_watched_shows",
   {
     description:
-      "Get all shows the authenticated user has watched with play counts per episode",
+      "Get shows the authenticated user has watched with play counts per episode, one page at a time",
     inputSchema: {
       extended: z.boolean().optional().default(true),
+      ...pageInput(100),
     },
   },
   getWatchedShows,
@@ -1531,7 +1635,7 @@ server.registerTool(
 server.registerTool(
   "get_watchlist",
   {
-    description: "Get the authenticated user's watchlist",
+    description: "Get the authenticated user's watchlist, one page at a time",
     inputSchema: {
       type: z.enum(["movies", "shows", "episodes", "seasons"]).optional(),
       sort: z
@@ -1547,6 +1651,7 @@ server.registerTool(
         ])
         .optional()
         .default("rank"),
+      ...pageInput(100),
     },
   },
   getWatchlist,

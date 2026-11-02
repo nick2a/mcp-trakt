@@ -64,7 +64,7 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                  | Description                              |
 | --------------------- | ---------------------------------------- |
-| `get_history`         | Watch history for the authenticated user |
+| `get_history`         | Watch history for the authenticated user (paginated) |
 | `add_to_history`      | Mark movies or episodes as watched       |
 | `remove_from_history` | Remove entries from watch history        |
 
@@ -72,8 +72,8 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                     | Description                         |
 | ------------------------ | ----------------------------------- |
-| `get_collection_movies`  | All movies in the user's collection |
-| `get_collection_shows`   | All shows in the user's collection  |
+| `get_collection_movies`  | Movies in the user's collection (paginated) |
+| `get_collection_shows`   | Shows in the user's collection (paginated)  |
 | `add_to_collection`      | Add movies, shows, or episodes      |
 | `remove_from_collection` | Remove items from the collection    |
 
@@ -81,8 +81,8 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                 | Description                                    |
 | -------------------- | ---------------------------------------------- |
-| `get_watched_movies` | All watched movies with play counts            |
-| `get_watched_shows`  | All watched shows with play counts per episode |
+| `get_watched_movies` | Watched movies with play counts (paginated)            |
+| `get_watched_shows`  | Watched shows with play counts per episode (paginated) |
 
 ## ⏯️ Playback
 
@@ -109,7 +109,7 @@ mcp-trakt exposes **53 tools**, grouped below by category.
 
 | Tool                    | Description                             |
 | ----------------------- | --------------------------------------- |
-| `get_watchlist`         | View the authenticated user's watchlist |
+| `get_watchlist`         | View the authenticated user's watchlist (paginated) |
 | `add_to_watchlist`      | Add movies, shows, or episodes          |
 | `remove_from_watchlist` | Remove items from the watchlist         |
 

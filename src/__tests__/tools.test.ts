@@ -4,11 +4,16 @@ import * as api from "../index.js"
 const mockFetch = vi.fn()
 vi.stubGlobal("fetch", mockFetch)
 
-const jsonResponse = (data: unknown, status = 200) =>
+const jsonResponse = (
+  data: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+) =>
   Promise.resolve({
     ok: status >= 200 && status < 300,
     status,
     statusText: status === 200 ? "OK" : "Not Found",
+    headers: new Headers(headers),
     json: () => Promise.resolve(data),
   })
 
@@ -17,6 +22,7 @@ const errorResponse = (status = 404) =>
     ok: false,
     status,
     statusText: "Not Found",
+    headers: new Headers(),
     json: () => Promise.resolve({}),
   })
 
@@ -391,17 +397,25 @@ describe("getCollectionMovies", () => {
         { collected_at: "2024-01-01", movie: { title: "Inception" } },
       ]),
     )
-    const result = await api.getCollectionMovies({ extended: true })
+    const result = await api.getCollectionMovies({
+      extended: true,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Inception")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.trakt.tv/sync/collection/movies?extended=full",
+      "https://api.trakt.tv/sync/collection/movies?page=1&limit=100&extended=full",
       expect.anything(),
     )
   })
 
   it("returns error on failure", async () => {
     mockFetch.mockReturnValue(errorResponse())
-    const result = await api.getCollectionMovies({ extended: true })
+    const result = await api.getCollectionMovies({
+      extended: true,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Error:")
   })
 })
@@ -411,17 +425,25 @@ describe("getCollectionShows", () => {
     mockFetch.mockReturnValue(
       jsonResponse([{ show: { title: "Breaking Bad" } }]),
     )
-    const result = await api.getCollectionShows({ extended: false })
+    const result = await api.getCollectionShows({
+      extended: false,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Breaking Bad")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.trakt.tv/sync/collection/shows",
+      "https://api.trakt.tv/sync/collection/shows?page=1&limit=100",
       expect.anything(),
     )
   })
 
   it("returns error on failure", async () => {
     mockFetch.mockReturnValue(errorResponse())
-    const result = await api.getCollectionShows({ extended: false })
+    const result = await api.getCollectionShows({
+      extended: false,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Error:")
   })
 })
@@ -465,17 +487,25 @@ describe("getWatchedMovies", () => {
     mockFetch.mockReturnValue(
       jsonResponse([{ plays: 2, movie: { title: "Inception" } }]),
     )
-    const result = await api.getWatchedMovies({ extended: true })
+    const result = await api.getWatchedMovies({
+      extended: true,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Inception")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.trakt.tv/sync/watched/movies?extended=full",
+      "https://api.trakt.tv/sync/watched/movies?page=1&limit=100&extended=full",
       expect.anything(),
     )
   })
 
   it("returns error on failure", async () => {
     mockFetch.mockReturnValue(errorResponse())
-    const result = await api.getWatchedMovies({ extended: true })
+    const result = await api.getWatchedMovies({
+      extended: true,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Error:")
   })
 })
@@ -485,17 +515,25 @@ describe("getWatchedShows", () => {
     mockFetch.mockReturnValue(
       jsonResponse([{ plays: 62, show: { title: "Breaking Bad" } }]),
     )
-    const result = await api.getWatchedShows({ extended: false })
+    const result = await api.getWatchedShows({
+      extended: false,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Breaking Bad")
     expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.trakt.tv/sync/watched/shows",
+      "https://api.trakt.tv/sync/watched/shows?page=1&limit=100",
       expect.anything(),
     )
   })
 
   it("returns error on failure", async () => {
     mockFetch.mockReturnValue(errorResponse())
-    const result = await api.getWatchedShows({ extended: false })
+    const result = await api.getWatchedShows({
+      extended: false,
+      page: 1,
+      limit: 100,
+    })
     expect(result.content[0].text).toContain("Error:")
   })
 })
@@ -630,14 +668,88 @@ describe("getWatchlist", () => {
     mockFetch.mockReturnValue(
       jsonResponse([{ rank: 1, movie: { title: "Tenet" } }]),
     )
-    const result = await api.getWatchlist({ sort: "rank" })
+    const result = await api.getWatchlist({ sort: "rank", page: 1, limit: 100 })
     expect(result.content[0].text).toContain("Tenet")
   })
 
   it("returns error on failure", async () => {
     mockFetch.mockReturnValue(errorResponse())
-    const result = await api.getWatchlist({ sort: "rank" })
+    const result = await api.getWatchlist({ sort: "rank", page: 1, limit: 100 })
     expect(result.content[0].text).toContain("Error:")
+  })
+})
+
+// ─── Pagination ───
+
+describe("paginated list tools", () => {
+  const paged = {
+    "X-Pagination-Page": "2",
+    "X-Pagination-Limit": "100",
+    "X-Pagination-Page-Count": "7",
+    "X-Pagination-Item-Count": "653",
+  }
+
+  it("return the page's items with Trakt's pagination info", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse([{ rank: 101, movie: { title: "Tenet" } }], 200, paged),
+    )
+    const result = await api.getWatchlist({ sort: "rank", page: 2, limit: 100 })
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      items: [{ rank: 101, movie: { title: "Tenet" } }],
+      pagination: { page: 2, limit: 100, pageCount: 7, itemCount: 653 },
+    })
+  })
+
+  it("send page and limit to Trakt", async () => {
+    mockFetch.mockReturnValue(jsonResponse([], 200, paged))
+    const calls: [string, () => Promise<unknown>][] = [
+      [
+        "/sync/watchlist?",
+        () => api.getWatchlist({ sort: "rank", page: 3, limit: 25 }),
+      ],
+      [
+        "/sync/watched/movies?",
+        () => api.getWatchedMovies({ extended: true, page: 3, limit: 25 }),
+      ],
+      [
+        "/sync/watched/shows?",
+        () => api.getWatchedShows({ extended: false, page: 3, limit: 25 }),
+      ],
+      [
+        "/sync/collection/movies?",
+        () => api.getCollectionMovies({ extended: true, page: 3, limit: 25 }),
+      ],
+      [
+        "/sync/collection/shows?",
+        () => api.getCollectionShows({ extended: false, page: 3, limit: 25 }),
+      ],
+      ["/sync/history?", () => api.getHistory({ page: 3, limit: 25 })],
+    ]
+    for (const [path, call] of calls) {
+      mockFetch.mockClear()
+      await call()
+      const url = mockFetch.mock.calls[0][0] as string
+      expect(url).toContain(path)
+      expect(url).toContain("page=3&limit=25")
+    }
+  })
+
+  it("keep the extended flag alongside the page query", async () => {
+    mockFetch.mockReturnValue(jsonResponse([], 200, paged))
+    await api.getWatchedMovies({ extended: true, page: 1, limit: 100 })
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      "https://api.trakt.tv/sync/watched/movies?page=1&limit=100&extended=full",
+    )
+  })
+
+  it("report null pagination when Trakt sends no pagination headers", async () => {
+    mockFetch.mockReturnValue(jsonResponse([{ movie: { title: "Dune" } }]))
+    const result = await api.getWatchedMovies({
+      extended: false,
+      page: 1,
+      limit: 100,
+    })
+    expect(JSON.parse(result.content[0].text).pagination).toBeNull()
   })
 })
 
