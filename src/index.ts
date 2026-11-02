@@ -37,8 +37,23 @@ const keychainRead = (account: string): string | null => {
   }
 }
 
+const keychainWrite = (account: string, value: string) =>
+  execFileSync("security", [
+    "add-generic-password",
+    "-U",
+    "-s",
+    KEYCHAIN_SERVICE,
+    "-a",
+    account,
+    "-w",
+    value,
+  ])
+
 const CLIENT_ID = process.env.MCP_TRAKT_CLIENT_ID || keychainRead("client-id")
-const ACCESS_TOKEN =
+// Refresh is Keychain-only: an env-var token has nowhere durable to store its
+// replacement, so env-var mode keeps the old no-refresh behaviour.
+const tokenFromEnv = Boolean(process.env.MCP_TRAKT_ACCESS_TOKEN)
+let accessToken =
   process.env.MCP_TRAKT_ACCESS_TOKEN || keychainRead("access-token")
 
 // Tests import this module to exercise the tool handlers against a mocked
@@ -53,7 +68,7 @@ if (!CLIENT_ID && !runningUnderTest) {
   process.exit(1)
 }
 
-if (!ACCESS_TOKEN && !runningUnderTest) {
+if (!accessToken && !runningUnderTest) {
   console.error(
     "Missing access token — set MCP_TRAKT_ACCESS_TOKEN or run: npx @kud/mcp-trakt setup",
   )
@@ -61,23 +76,96 @@ if (!ACCESS_TOKEN && !runningUnderTest) {
 }
 
 export const API_BASE = "https://api.trakt.tv"
+// Must match the redirect URI setup.js signs in with.
+const REDIRECT_URI = "http://localhost:8080/callback"
 
-export const apiFetch = async <T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T | null> => {
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
+let refreshing: Promise<boolean> | null = null
+
+// Trakt refresh tokens are single-use: every refresh returns a new pair and
+// invalidates the old refresh token. So concurrent callers share one refresh,
+// and if the Keychain already holds a different token than the one that was
+// rejected (refreshed by this process after the request was sent, or by another
+// MCP client), it is adopted instead of spending a second refresh.
+const refreshAccessToken = async (rejected: string | null): Promise<boolean> => {
+  if (tokenFromEnv) return false
+  refreshing ??= (async () => {
+    const stored = keychainRead("access-token")
+    if (stored && stored !== rejected) {
+      accessToken = stored
+      return true
+    }
+    const refreshToken = keychainRead("refresh-token")
+    if (!refreshToken) return false
+    const response = await fetch(`${API_BASE}/oauth/token`, {
+      method: "POST",
+      headers: {
+        "User-Agent": "mcp-trakt",
+        "Content-Type": "application/json",
+        "trakt-api-version": "2",
+        "trakt-api-key": CLIENT_ID!,
+      },
+      body: JSON.stringify({
+        refresh_token: refreshToken,
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        grant_type: "refresh_token",
+      }),
+    })
+    if (!response.ok) {
+      console.error(
+        `Token refresh failed: ${response.status} ${response.statusText} — run: npx @kud/mcp-trakt setup`,
+      )
+      return false
+    }
+    const token = (await response.json()) as {
+      access_token: string
+      refresh_token: string
+    }
+    // Refresh token first: the old one is already dead, so it must not be lost.
+    // Access token last: another process treats a changed access token as
+    // "refresh complete" and adopts it.
+    keychainWrite("refresh-token", token.refresh_token)
+    keychainWrite("access-token", token.access_token)
+    accessToken = token.access_token
+    return true
+  })()
+    .catch((error) => {
+      console.error("Token refresh failed", error)
+      return false
+    })
+    .finally(() => {
+      refreshing = null
+    })
+  return refreshing
+}
+
+// Sends an authenticated request; on 401 refreshes the token and retries once.
+const authedFetch = async (path: string, options: RequestInit = {}) => {
+  const send = () =>
+    fetch(`${API_BASE}${path}`, {
       ...options,
       headers: {
         "User-Agent": "mcp-trakt",
         "trakt-api-version": "2",
         "trakt-api-key": CLIENT_ID!,
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
+        Authorization: `Bearer ${accessToken}`,
         ...options.headers,
       },
     })
+  const sentWith = accessToken
+  const response = await send()
+  if (response.status === 401 && (await refreshAccessToken(sentWith)))
+    return send()
+  return response
+}
+
+export const apiFetch = async <T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T | null> => {
+  try {
+    const response = await authedFetch(path, options)
     if (!response.ok) {
       console.error(
         `API error: ${response.status} ${response.statusText} — ${path}`,
@@ -94,16 +182,7 @@ export const apiFetch = async <T>(
 
 const apiDelete = async (path: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      method: "DELETE",
-      headers: {
-        "User-Agent": "mcp-trakt",
-        "trakt-api-version": "2",
-        "trakt-api-key": CLIENT_ID!,
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-    })
+    const response = await authedFetch(path, { method: "DELETE" })
     return response.ok
   } catch (error) {
     console.error(`Delete failed: ${path}`, error)

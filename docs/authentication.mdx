@@ -16,7 +16,11 @@ Code + PKCE flow — no client secret, and you never manage tokens manually.
 4. Tokens are saved to the macOS Keychain (never printed) — the server reads
    them automatically on every start
 
-To refresh an expired token, just run `npm run setup` again.
+Access tokens last 7 days. When Trakt rejects one with a 401, the server uses
+the stored refresh token to get a new pair, saves it to the Keychain, and
+retries — you don't need to do anything. Refresh tokens are single-use, so if
+refreshing ever fails, run `npm run setup` again. Tokens supplied via
+`MCP_TRAKT_ACCESS_TOKEN` are never refreshed.
 
 ## 🧪 Test your credentials
 
@@ -32,6 +36,6 @@ curl -s https://api.trakt.tv/users/me \
 - Credentials are stored in the macOS Keychain — never in plain files or config
 - Rotate your access token if it is accidentally exposed — run `npm run setup`
   again
-- Trakt access tokens expire after 90 days — re-run `npm run setup` to refresh
+- Trakt access tokens expire after 7 days and are refreshed automatically
 - Treat your access token like a password: full account access with
   history/checkin write rights

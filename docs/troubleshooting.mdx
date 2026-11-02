@@ -11,7 +11,8 @@ description: Common issues with mcp-trakt — server not showing, auth errors, a
 
 ## 🔐 401 / auth errors
 
-- Access tokens expire after 3 months — regenerate with `npm run setup`
+- Access tokens expire after 7 days and are refreshed automatically; if the
+  logs show `Token refresh failed`, run `npm run setup` again
 - Make sure `MCP_TRAKT_CLIENT_ID` matches the app your access token was issued
   for
 - Check logs: Claude Desktop → Help → Show Logs
