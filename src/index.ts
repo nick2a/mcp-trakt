@@ -254,6 +254,12 @@ const compactInput = {
 // truncated: true, so one call can't grow without bound.
 const COMPACT_MAX_PAGES = 20
 
+// Claude Code saves any text tool result over 50,000 characters to a file
+// unless the tool declares its own limit. A full compact list (~125 chars per
+// row) easily passes that, so the compact-capable tools allow ~1,200 rows
+// inline; bigger results still fall back to a file.
+const compactResultMeta = { "anthropic/maxResultSizeChars": 150_000 }
+
 type MediaItem = {
   type?: string
   show?: { title: string }
@@ -1053,7 +1059,7 @@ export const getUserWatching = async ({ username }: { username: string }) => {
 
 // ─── Server ───
 
-const server = new McpServer({ name: "trakt", version: "1.0.0" })
+export const server = new McpServer({ name: "trakt", version: "1.0.0" })
 
 // ─── Search ───
 
@@ -1469,6 +1475,7 @@ server.registerTool(
   {
     description:
       "Get movies in the authenticated user's collection, one page at a time",
+    _meta: compactResultMeta,
     inputSchema: {
       extended: z
         .boolean()
@@ -1487,6 +1494,7 @@ server.registerTool(
   {
     description:
       "Get shows in the authenticated user's collection, one page at a time",
+    _meta: compactResultMeta,
     inputSchema: {
       extended: z
         .boolean()
@@ -1577,6 +1585,7 @@ server.registerTool(
   {
     description:
       "Get movies the authenticated user has watched with play counts, one page at a time",
+    _meta: compactResultMeta,
     inputSchema: {
       extended: z.boolean().optional().default(true),
       ...pageInput(100),
@@ -1591,6 +1600,7 @@ server.registerTool(
   {
     description:
       "Get shows the authenticated user has watched with play counts per episode, one page at a time",
+    _meta: compactResultMeta,
     inputSchema: {
       extended: z.boolean().optional().default(true),
       ...pageInput(100),
@@ -1746,6 +1756,7 @@ server.registerTool(
   "get_watchlist",
   {
     description: "Get the authenticated user's watchlist, one page at a time",
+    _meta: compactResultMeta,
     inputSchema: {
       type: z.enum(["movies", "shows", "episodes", "seasons"]).optional(),
       sort: z
